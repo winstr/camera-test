@@ -5,6 +5,30 @@ import cv2
 from src.utils.camera import oCamS_1CGN_U
 
 
+class ChessboardCapturer():
+
+    def __init__(self, num_corners_horizontal, num_corners_vertical, output_dir="out"):
+        if os.path.isdir(output_dir):
+            raise FileExistsError(output_dir)
+        self.output_dir = output_dir
+        self.chessboard = (num_corners_horizontal, num_corners_vertical)
+
+    def draw_chessboard_corners(self, frame):
+        ret, corners = cv2.findChessboardCorners(frame, self.chessboard)
+        if ret:
+            cv2.drawChessboardCorners(frame, self.chessboard, corners, ret)
+    
+    def save_image(filepath, image, overwrite=True):
+        if os.path.isfile(filepath) and not overwrite:
+            return
+        cv2.imwrite(filepath, image)
+
+    def capture(self, camera):
+        frame_idx = 0
+        while True:
+            frame = camera.get_frame()
+
+
 def draw_chessboard_corner(frame, chessboard):
     ret, corners = cv2.findChessboardCorners(frame, chessboard)
     if ret:
@@ -56,4 +80,4 @@ def capture_chessboard_oCamS_1CGN_U(chessboard, output_dir, lens):
 
 if __name__ == "__main__":
     capture_chessboard_oCamS_1CGN_U(
-        chessboard=(8, 6), output_dir="out", lens="all")
+        chessboard=(8, 6), output_dir="out", lens=["left", "right"])
