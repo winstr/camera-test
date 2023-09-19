@@ -66,4 +66,4 @@ class oCamS_1CGN_U(Camera):
         if lens == "right":
             return right_frame
         if lens == "all":
-            return (left_frame, right_frame)
+            return frame

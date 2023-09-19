@@ -119,5 +119,5 @@ def __validate_oCamS_1CGN_U():
 
 
 if __name__ == "__main__":
-    __calibrate_oCamS_1CGN_U((8, 6), 22.0)
+    #__calibrate_oCamS_1CGN_U((8, 6), 22.0)
     __validate_oCamS_1CGN_U()
