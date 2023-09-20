@@ -2,10 +2,10 @@ import cv2
 
 
 if __name__ == "__main__":
-    cam = cv2.VideoCapture("/dev/video2")
+    cam = cv2.VideoCapture("/dev/cam/ThermoCam160B")
     fourcc = cv2.VideoWriter.fourcc('Y', '1', '6', ' ')
 
-    cam.set(cv2.CAP_PROP_FOURCC, fourcc)
+    #cam.set(cv2.CAP_PROP_FOURCC, fourcc)
     cam.set(cv2.CAP_PROP_CONVERT_RGB, 0)
 
     while cam.isOpened():
