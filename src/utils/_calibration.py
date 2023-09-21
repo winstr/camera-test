@@ -70,7 +70,6 @@ class Calibrator():
             self.chessboard, self.square_size, img_paths, img_width, img_height)
 
 
-
 def __calibrate_oCamS_1CGN_U(chessboard, square_size):
     img_dir = "out"
     img_name_pattern_left = "*left.jpg"
