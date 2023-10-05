@@ -10,12 +10,12 @@ CAP = cv2.VideoCapture(
     gstreamer_pipeline(csi_device=0),
     cv2.CAP_GSTREAMER)
 
+if not CAP.isOpened():
+    print('Failed to open camera.')
+    exit()
+
 
 def gen_frames():
-    if not CAP.isOpened():
-        print('Failed to open camera.')
-        exit()
-
     while True:
         ret, frame = CAP.read()
         if not ret:
