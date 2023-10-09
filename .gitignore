@@ -1,2 +1,5 @@
 *.jpg
 *.png
+*.pkl
+
+__pycache__/
