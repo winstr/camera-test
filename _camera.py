@@ -143,14 +143,17 @@ class oCamS_1CGN_U(Camera):
     FRAME_HEIGHT = 480
     FPS = 30
 
-    CALIB_LEFT_PKL = 'data/oCamS-1CGN-U_left_calib.pkl'
-    CALIB_RIGHT_PKL = 'data/oCamS-1CGN-U_right_calib.pkl'
+    #CALIB_LEFT_PKL = 'data/oCamS-1CGN-U_left_calib.pkl'
+    #CALIB_RIGHT_PKL = 'data/oCamS-1CGN-U_right_calib.pkl'
+    CALIB_STEREO = 'data/oCamS-1CGN-U_stereo_calib.pkl'
 
     def __init__(self):
         super().__init__()
         self.lenses = ['left', 'right']
-        self._calib_left = None
-        self._calib_right = None
+        self.left_map = None
+        self.right_map = None
+        #self._calib_left = None
+        #self._calib_right = None
         self._set_calibration()
 
     def set_lenses(self, lenses):
@@ -158,10 +161,27 @@ class oCamS_1CGN_U(Camera):
         self.lenses = lenses
 
     def _set_calibration(self):
-        if os.path.isfile(self.CALIB_LEFT_PKL):
-            self._calib_left = load_data(self.CALIB_LEFT_PKL)
-        if os.path.isfile(self.CALIB_RIGHT_PKL):
-            self._calib_right = load_data(self.CALIB_RIGHT_PKL)
+        #if os.path.isfile(self.CALIB_LEFT_PKL):
+        #    self._calib_left = load_data(self.CALIB_LEFT_PKL)
+        #if os.path.isfile(self.CALIB_RIGHT_PKL):
+        #    self._calib_right = load_data(self.CALIB_RIGHT_PKL)
+        if not os.path.isfile(self.CALIB_STEREO):
+            return
+
+        data = load_data(self.CALIB_STEREO)
+        R1, R2, P1, P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
+            data['mtx_left'], data['dist_left'], data['mtx_right'], data['dist_right'],
+            (self.FRAME_WIDTH, self.FRAME_HEIGHT), data['R'], data['T'])
+
+        left_map1, left_map2 = cv2.initUndistortRectifyMap(
+            data['mtx_left'], data['dist_left'], R1, P1, (self.FRAME_WIDTH, self.FRAME_HEIGHT), cv2.CV_16SC2)
+        
+        right_map1, right_map2 = cv2.initUndistortRectifyMap(
+            data['mtx_right'], data['dist_right'], R1, P1, (self.FRAME_WIDTH, self.FRAME_HEIGHT), cv2.CV_16SC2)
+
+        self.left_map = (left_map1, left_map2)
+        self.right_map = (right_map1, right_map2)
+        
     
     def connect(self,
                 camera_source,
@@ -181,14 +201,18 @@ class oCamS_1CGN_U(Camera):
         frame_right, frame_left = cv2.split(frame)
 
         frame_left = cv2.cvtColor(frame_left, cv2.COLOR_BAYER_GB2BGR)
-        if self._calib_left is not None:
-            frame_left = undistort_image(
-                frame_left, self._calib_left['mtx'], self._calib_left['dist'])
+        #if self._calib_left is not None:
+        #    frame_left = undistort_image(
+        #        frame_left, self._calib_left['mtx'], self._calib_left['dist'])
+        if self.left_map is not None:
+            frame_left = cv2.remap(frame_left, self.left_map[0], self.left_map[1], cv2.INTER_LINEAR)
             
         frame_right = cv2.cvtColor(frame_right, cv2.COLOR_BAYER_GB2BGR)
-        if self._calib_right is not None:
-            frame_right = undistort_image(
-                frame_right, self._calib_right['mtx'], self._calib_right['dist'])
+        #if self._calib_right is not None:
+        #    frame_right = undistort_image(
+        #        frame_right, self._calib_right['mtx'], self._calib_right['dist'])
+        if self.right_map is not None:
+            frame_right = cv2.remap(frame_right, self.right_map[0], self.right_map[1], cv2.INTER_LINEAR)
 
         return frame_left, frame_right
 
@@ -246,28 +270,3 @@ class ThermoCam160B(Camera):
         frame = frame[:, :, ::-1]
         frame = (frame * 255).astype(np.uint8)
         return frame
-
-
-'''
-import cv2
-
-MIN_DEG = 20000
-MAX_DEG = 65535
-
-cap = cv2.VideoCapture('/dev/video2')
-cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('Y','1','6',' '))
-cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    cv2.normalize(frame, frame, MIN_DEG, MAX_DEG, cv2.NORM_MINMAX)
-    frame = cv2.resize(frame, dsize=(640, 480))
-    cv2.imshow("", frame)
-    if cv2.waitKey(1) == ord('q'):
-        break
-
-cv2.destroyAllWindows()
-cap.release()
-'''
