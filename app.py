@@ -1,44 +1,42 @@
-import cv2
 from flask import Flask, Response
 from flask import redirect, url_for
 
-from csi_camera import gstreamer_pipeline
+from camera import oCamS_1CGN_U, ThermoCam160B
 
+
+STEREO_CAM = oCamS_1CGN_U()
+STEREO_CAM.connect('/dev/camera/oCamS-1CGN-U',
+                   fps=9,
+                   exposure=400)
+
+THERMO_CAM = ThermoCam160B()
+THERMO_CAM.connect('/dev/camera/ThermoCam160B')
 
 APP = Flask(__name__)
-CAP = cv2.VideoCapture(
-    gstreamer_pipeline(csi_device=0),
-    cv2.CAP_GSTREAMER)
-
-if not CAP.isOpened():
-    print('Failed to open camera.')
-    exit()
 
 
-def gen_frames():
-    while True:
-        ret, frame = CAP.read()
-        if not ret:
-            print('Failed to retrieve frame')
-            break
-
-        ret, jpeg_frame = cv2.imencode('.jpg', frame)
-
-        yield(
-            b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' + jpeg_frame.tobytes() + b'\r\n')
+@APP.route('/video_feed_stereo')
+def video_feed_stereo():
+    return Response(STEREO_CAM.gen_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-@APP.route('/video_feed0')
-def video_feed0():
-    return Response(
-        gen_frames(),
-        mimetype='multipart/x-mixed-replace; boundary=frame')
+@APP.route('/video_feed_thermo')
+def video_feed_thermo():
+    return Response(THERMO_CAM.gen_frames(dsize=(640, 480)),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @APP.route('/')
 def index():
-    return redirect(url_for('video_feed0'))
+    return '''
+    <html>
+    <body>
+        <img src="/video_feed_stereo">
+        <img src="/video_feed_thermo">
+    </body>
+    </html>
+    '''
 
 
 if __name__ == '__main__':
@@ -47,4 +45,5 @@ if __name__ == '__main__':
     except:
         pass
     finally:
-        CAP.release()
+        STEREO_CAM.release()
+        THERMO_CAM.release()
