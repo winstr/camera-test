@@ -142,13 +142,10 @@ def stereo_calibrate(chessboard, square_size, img_paths, img_width, img_height):
 
     ret, mtx_left, dist_left, mtx_right, dist_right, R, T, E, F = cv2.stereoCalibrate(
         objpoints, imgpoints_left, imgpoints_right, None, None, None, None, (img_width, img_height))
-    print(ret)
-
     calib_data = {
         'ret': ret, 'mtx_left': mtx_left, 'dist_left': dist_left,
         'mtx_right': mtx_right, 'dist_right': dist_right,
         'R': R, 'T': T, 'E': E, 'F': F}
-
     save_data('data/oCamS-1CGN-U_stereo_calib.pkl', calib_data)
 
 # ----- -----
