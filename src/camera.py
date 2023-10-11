@@ -1,4 +1,5 @@
 import os
+import pickle
 import traceback
 from datetime import datetime
 
@@ -26,6 +27,22 @@ class FailedToReadError(RuntimeError):
 
 def get_datetime() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f")
+
+
+def undistort_image(img, mtx, dist):
+    dst = cv2.undistort(img, mtx, dist)
+    return dst
+
+
+def load_data(file_path):
+    with open(file_path, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+
+def save_data(file_path, data):
+    with open(file_path, "wb") as f:
+        pickle.dump(data, f)
 
 
 class Camera():
@@ -129,28 +146,97 @@ class Camera():
         raise NotImplementedError()
 
 
-class oCamS_1CGN_U(Camera):
+class oCamS1CGNU(Camera):
     ''' a type of stereo camera '''
     def __init__(self) -> None:
         super().__init__()
         self._lenses = {'left':False, 'right':False}
 
+        self._l_calib_data_mono = None  # left
+        self._r_calib_data_mono = None  # right
+
+        self._calib_data_stereo = None
+        self._l_map = None
+        self._r_map = None
+
     def set_lenses(self, left:bool, right:bool) -> None:
         self._lenses['left'] = left
         self._lenses['right'] = right
-    
+
+    def set_mono_calibration_params(self, l_calib_file, r_calib_file) -> None:
+        if self._calib_data_stereo is not None:
+            self._calib_data_mono_left = None
+            self._calib_data_mono_right = None
+            print('stereo calibration is already applied.')
+            return
+        self._l_calib_data_mono = load_data(l_calib_file)
+        self._r_calib_data_mono = load_data(r_calib_file)
+
+    def set_stereo_calibration_params(self, calib_file) -> None:
+        if self._l_calib_data_mono is not None and self._r_calib_data_mono is not None:
+            self._l_calib_data_mono = None
+            self._r_calib_data_mono = None
+            print('mono calibrations are disabled.')
+        self._calib_data_stereo = load_data(calib_file)
+
+        R1, R2, P1, P2, _, _, _ = cv2.stereoRectify(
+            self._calib_data_stereo['l_mtx'],
+            self._calib_data_stereo['l_dist'],
+            self._calib_data_stereo['r_mtx'],
+            self._calib_data_stereo['r_dist'],
+            (self._frame_width, self._frame_height),
+            self._calib_data_stereo['R'],
+            self._calib_data_stereo['T'])
+        
+        l_map_1st, l_map_2nd = cv2.initUndistortRectifyMap(
+            self._calib_data_stereo['l_mtx'],
+            self._calib_data_stereo['l_dist'],
+            R1,
+            P1,
+            (self._frame_width, self._frame_height),
+            cv2.CV_16SC2)
+
+        r_map_1st, r_map_2nd = cv2.initUndistortRectifyMap(
+            self._calib_data_stereo['r_mtx'],
+            self._calib_data_stereo['r_dist'],
+            R2,
+            P2,
+            (self._frame_width, self._frame_height),
+            cv2.CV_16SC2)
+
+        self._l_map = (l_map_1st, l_map_2nd)
+        self._r_map = (r_map_1st, r_map_2nd)
+
+    def empty_all_calibration_params(self) -> None:
+        self._l_calib_data_mono = None
+        self._r_calib_data_mono = None
+        self._calib_data_stereo = None
+        self._l_map = None
+        self._r_map = None
+
     def _preproc_buffer(self, buffer) -> np.ndarray:
         r_frame, l_frame = cv2.split(buffer)  # right, left
         l_frame = cv2.cvtColor(l_frame, cv2.COLOR_BAYER_GB2BGR)
         r_frame = cv2.cvtColor(r_frame, cv2.COLOR_BAYER_GB2BGR)
+
+        if self._l_calib_data_mono is not None and self._r_calib_data_mono is not None:
+            l_frame = undistort_image(
+                l_frame, self._l_calib_data_mono['mtx'], self._l_calib_data_mono['dist'])
+            r_frame = undistort_image(
+                r_frame, self._r_calib_data_mono['mtx'], self._r_calib_data_mono['dist'])
+
+        if self._calib_data_stereo is not None:
+            l_frame = cv2.remap(l_frame, self._l_map[0], self._l_map[1], cv2.INTER_LINEAR)
+            r_frame = cv2.remap(r_frame, self._r_map[0], self._r_map[1], cv2.INTER_LINEAR)
 
         frames = {'left': None, 'right': None}
         if self._lenses['left']:
             frames['left'] = l_frame
         if self._lenses['right']:
             frames['right'] = r_frame
-        return frames
 
+        return frames
+    
     def _prepare_display(self, frames) -> np.ndarray:
         buffer = []
         if frames['left'] is not None:
@@ -161,7 +247,7 @@ class oCamS_1CGN_U(Camera):
         return image
 
 
-class oCamS_1CGN_U_ChessboardCapture(oCamS_1CGN_U):
+class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
     ''' for calibration '''
     def __init__(self) -> None:
         super().__init__()
