@@ -322,3 +322,81 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
             print(f'Warning: All lenses are disabled: {self._lenses}')
             image = np.zeros((self._frame_height, self._frame_width, 3))
         return image
+
+"""
+class ThermoCam160B(Camera):
+
+    FRAME_WIDTH = 160
+    FRAME_HEIGHT = 120
+    FPS = 9
+
+    TEMP_MIN = -10
+    TEMP_MAX = 140
+
+    def __init__(self):
+        super().__init__()
+
+    def connect(self,
+                camera_source,
+                fps=FPS,
+                width=FRAME_WIDTH,
+                height=FRAME_HEIGHT,
+                exposure=0,
+                cvt_rgb=0,
+                max_retries=5,
+                delay=2):
+        fourcc = cv2.VideoWriter.fourcc('Y', '1', '6', ' ')
+        return super().connect(
+            camera_source, fps, width, height, exposure, cvt_rgb,
+            fourcc, max_retries, delay)
+
+    def preproc(self, frame):
+        frame = (frame / 65535.) * (self.TEMP_MAX - self.TEMP_MIN) + self.TEMP_MIN
+        frame = (frame - np.min(frame)) / (np.max(frame) - np.min(frame))
+        frame = plt.cm.plasma(frame)
+        frame = frame[:, :, :3]
+        frame = frame[:, :, ::-1]
+        frame = (frame * 255).astype(np.uint8)
+        return frame
+
+def gstreamer_pipeline(
+        csi_device,
+        capture_width=640,
+        capture_height=480,
+        display_width=640,
+        display_height=480,
+        framerate=30,
+        flip_method=0):
+    '''
+    usage:
+        cap = cv2.VideoCapture(gstreamer_pipeline(device=0), cv2.CAP_GSTREAMER)
+        ...
+
+    params:
+        - csi_device(int): csi camera port number. ex) 0 -> /dev/video0
+        - capture_width(int): ...
+        - capture_height(int): ...
+        - display_width(int): ...
+        - display_height(int): ...
+        - framerate(int): ...
+        - flip_method(int):
+            0: No rotation/flip (default).
+            1: Rotate clockwise by 90 degrees.
+            2: Flip horizontally.
+            3: Rotate clockwise by 180 degrees.
+            4: Rotate clockwise by 90 degrees then flip horizontally.
+            5: Rotate clockwise by 270 degrees.
+            6: Rotate clockwise by 270 degrees then flip horizontally.
+            7: Rotate clockwise by 90 degrees.
+    '''
+    return (
+        f'nvarguscamerasrc sensor-id={csi_device} ! video/x-raw(memory:NVMM), '
+        f'width=(int){capture_width}, '
+        f'height=(int){capture_height}, '
+        f'format=(string)NV12, framerate=(fraction){framerate}/1 ! '
+        f'nvvidconv flip-method={flip_method} ! video/x-raw, '
+        f'width=(int){display_width}, '
+        f'height=(int){display_height}, '
+        'format=(string)BGRx ! videoconvert ! '
+        'video/x-raw, format=(string)BGR ! appsink')
+"""

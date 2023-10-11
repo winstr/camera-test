@@ -86,11 +86,11 @@ def calibrate_stereo(chessboard, square_size, img_paths, img_width, img_height):
 if __name__ == '__main__':
     camera_source = '/dev/camera/oCamS-1CGN-U'
     img_width, img_height = 640, 480
-    exposure = 400
-    num_corners_col = 10
-    num_corners_row = 7
+    exposure = 200
+    num_corners_col = 8
+    num_corners_row = 6
     chessboard = (num_corners_col, num_corners_row)
-    square_size = 23  # mm
+    square_size = 20.5  # mm
 
     l_output_dir = 'out_left'
     r_output_dir = 'out_right'
