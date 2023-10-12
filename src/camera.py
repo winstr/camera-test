@@ -8,20 +8,20 @@ import numpy as np
 
 
 class NotConfiguredError(RuntimeError):
-    def __init__(self, camera_source) -> None:
-        msg = f'Not configured: {camera_source}'
+    def __init__(self, cap_src) -> None:
+        msg = f'Not configured: {cap_src}'
         super().__init__(msg)
 
 
 class FailedToConnectError(RuntimeError):
-    def __init__(self, camera_source) -> None:
-        msg = f'Failed to connect: {camera_source}.'
+    def __init__(self, cap_src) -> None:
+        msg = f'Failed to connect: {cap_src}.'
         super().__init__(msg)
 
 
 class FailedToReadError(RuntimeError):
-    def __init__(self, camera_source) -> None:
-        msg = f'Failed to read: {camera_source}.'
+    def __init__(self, cap_src) -> None:
+        msg = f'Failed to read_frame: {cap_src}.'
         super().__init__(msg)
 
 
@@ -46,13 +46,16 @@ def save_data(file_path, data):
 
 
 class Camera():
+
     def __init__(self):
-        self._camera_source = None
-        self._frame_width = None
-        self._frame_height = None
+        self._cap_src = None
+        self._img_w = None
+        self._img_h = None
         self._fps = None
-        self._exposure = None
+        self._exp = None
+        self._cvt_rgb = None
         self._cap = None
+
         self._is_connected = False
         self._is_configured = False
 
@@ -63,36 +66,47 @@ class Camera():
         self.disconnect()
 
     def configure(self,
-                  camera_source:str,
-                  frame_width:int=640,
-                  frame_height:int=480,
-                  fps:float=30.0,
-                  exposure:int=200,
-                  cvt_rgb:float=0.0):
-        self._camera_source = camera_source
-        self._frame_width = frame_width
-        self._frame_height = frame_height
+                         cap_src:str,
+                         img_w:int=640,
+                         img_h:int=480,
+                         fps:float=30.0,
+                         exp:int=200,
+                         cvt_rgb:float=0.) -> None:
+        '''
+        params:
+            cap_src(str): Video capture source
+                - local device, e.g. /dev/video0
+                - online video URL, e.g. https://...
+            img_w(int): Num of pixels of frame width, e.g. 640
+            img_h(int): Num of pixels of frame height, e.g. 480
+            fps(float): Frame rate or frame per sec.  e.g. 30
+            exp(int): exposure. e.g. 200
+            cvt_rgb(float): Convert frame to RGB channel
+                - 0: False
+                - 1: True
+        '''
+        self._cap_src = cap_src
+        self._img_w = img_w
+        self._img_h = img_h
         self._fps = fps
-        self._exposure = exposure
+        self._exp = exp
         self._cvt_rgb = cvt_rgb
         self._is_configured = True
 
     def connect(self) -> None:
         if not self._is_configured:
-            raise NotConfiguredError(self._camera_source)
-
+            raise NotConfiguredError(self._cap_src)
         self.disconnect()
-        self._cap = cv2.VideoCapture(self._camera_source)
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._frame_width)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._frame_height)
+        self._cap = cv2.VideoCapture(self._cap_src)
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._img_w)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._img_h)
         self._cap.set(cv2.CAP_PROP_FPS, self._fps)
-        self._cap.set(cv2.CAP_PROP_EXPOSURE, self._exposure)
+        self._cap.set(cv2.CAP_PROP_EXPOSURE, self._exp)
         self._cap.set(cv2.CAP_PROP_CONVERT_RGB, self._cvt_rgb)
         self._is_connected = True
-
         if not self._cap.isOpened():
             self.disconnect()
-            raise FailedToConnectError(self._camera_source)
+            raise FailedToConnectError(self._cap_src)
 
     def disconnect(self) -> None:
         if self._is_connected:
@@ -100,30 +114,30 @@ class Camera():
             self._cap = None
             self._is_connected = False
 
-    def read(self) -> np.ndarray:
+    def read_frame(self) -> np.ndarray:
         if not self._is_connected:
             self.connect()
-
-        ret, buffer = self._cap.read()
+        ret, frame = self._cap.read()
         if not ret:
             self.disconnect()
-            raise FailedToReadError(self._camera_source)
-
-        frame = self._preproc_buffer(buffer)
+            raise FailedToReadError(self._cap_src)
+        frame = self._preprocess(frame)
         return frame
 
-    def display(self, prefix:str='', output_dir:str=None) -> None:
+    def _preprocess(self, frame:np.ndarray) -> np.ndarray:
+        raise NotImplementedError()
+
+    def grab_frame(self, prefix:str='', output_dir:str=None) -> None:
         if output_dir is None:
             output_dir = f'out_{get_datetime()}'
         if not os.path.isdir(output_dir):
             os.makedirs(output_dir)
-
         i = 0
         while True:
             try:
-                frame = self.read()
-                image = self._prepare_display(frame)
-                cv2.imshow(f'{self._camera_source}: {prefix}', image)
+                frame = self.read_frame()
+                image = self._postprocess(frame)
+                cv2.imshow(f'{self._cap_src}: {prefix}', image)
                 key = cv2.waitKey(1)
                 if key == ord('s'):
                     image_file = f"{'_'.join([prefix, str(i).zfill(5)])}.jpg"
@@ -135,14 +149,10 @@ class Camera():
             except:
                 print(traceback.format_exc())
                 break
-
         cv2.destroyAllWindows()
         self.disconnect()
-
-    def _preproc_buffer(self, buffer) -> np.ndarray:
-        raise NotImplementedError()
-
-    def _prepare_display(self, frame) -> np.ndarray:
+    
+    def _postprocess(self, frame:np.ndarray) -> np.ndarray:
         raise NotImplementedError()
 
 
@@ -184,7 +194,7 @@ class oCamS1CGNU(Camera):
             self._calib_data_stereo['l_dist'],
             self._calib_data_stereo['r_mtx'],
             self._calib_data_stereo['r_dist'],
-            (self._frame_width, self._frame_height),
+            (self._img_w, self._img_h),
             self._calib_data_stereo['R'],
             self._calib_data_stereo['T'])
         
@@ -193,7 +203,7 @@ class oCamS1CGNU(Camera):
             self._calib_data_stereo['l_dist'],
             R1,
             P1,
-            (self._frame_width, self._frame_height),
+            (self._img_w, self._img_h),
             cv2.CV_16SC2)
 
         r_map_1st, r_map_2nd = cv2.initUndistortRectifyMap(
@@ -201,7 +211,7 @@ class oCamS1CGNU(Camera):
             self._calib_data_stereo['r_dist'],
             R2,
             P2,
-            (self._frame_width, self._frame_height),
+            (self._img_w, self._img_h),
             cv2.CV_16SC2)
 
         self._l_map = (l_map_1st, l_map_2nd)
@@ -214,8 +224,8 @@ class oCamS1CGNU(Camera):
         self._l_map = None
         self._r_map = None
 
-    def _preproc_buffer(self, buffer) -> np.ndarray:
-        r_frame, l_frame = cv2.split(buffer)  # right, left
+    def _preprocess(self, frame) -> np.ndarray:
+        r_frame, l_frame = cv2.split(frame)  # right, left
         l_frame = cv2.cvtColor(l_frame, cv2.COLOR_BAYER_GB2BGR)
         r_frame = cv2.cvtColor(r_frame, cv2.COLOR_BAYER_GB2BGR)
 
@@ -237,13 +247,13 @@ class oCamS1CGNU(Camera):
 
         return frames
     
-    def _prepare_display(self, frames) -> np.ndarray:
-        buffer = []
+    def _postprocess(self, frames) -> np.ndarray:
+        frame = []
         if frames['left'] is not None:
-            buffer.append(frames['left'])
+            frame.append(frames['left'])
         if frames['right'] is not None:
-            buffer.append(frames['right'])
-        image = cv2.hconcat(buffer)
+            frame.append(frames['right'])
+        image = cv2.hconcat(frame)
         return image
 
 
@@ -264,7 +274,7 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
         if self._chessboard is None:
             raise ValueError(self._chessboard)
 
-    def display(self, prefix:str='', output_dir:str=None) -> None:
+    def grab_frame(self, prefix:str='', output_dir:str=None) -> None:
         self.check_chessboard()
 
         if output_dir is None:
@@ -275,9 +285,9 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
         i = 0
         while True:
             try:
-                frames = self.read()
-                image = self._prepare_display(frames)
-                cv2.imshow(f'{self._camera_source}: {self._lenses}', image)
+                frames = self.read_frame()
+                image = self._postprocess(frames)
+                cv2.imshow(f'{self._cap_src}: {self._lenses}', image)
                 key = cv2.waitKey(1)
                 if key == ord('s'):
                     if self._lenses['left']:
@@ -297,7 +307,7 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
         cv2.destroyAllWindows()
         self.disconnect()
 
-    def _prepare_display(self, frames) -> np.ndarray:
+    def _postprocess(self, frames) -> np.ndarray:
         if isinstance(frames['left'], np.ndarray) and isinstance(frames['right'], np.ndarray):
             l_frame, r_frame = frames['left'].copy(), frames['right'].copy()
             l_ret, l_corners = cv2.findChessboardCorners(l_frame, self._chessboard)
@@ -320,7 +330,7 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
             image = r_frame
         else:
             print(f'Warning: All lenses are disabled: {self._lenses}')
-            image = np.zeros((self._frame_height, self._frame_width, 3))
+            image = np.zeros((self._img_h, self._img_w, 3))
         return image
 
 """
@@ -337,17 +347,17 @@ class ThermoCam160B(Camera):
         super().__init__()
 
     def connect(self,
-                camera_source,
+                cap_src,
                 fps=FPS,
                 width=FRAME_WIDTH,
                 height=FRAME_HEIGHT,
-                exposure=0,
+                exp=0,
                 cvt_rgb=0,
                 max_retries=5,
                 delay=2):
         fourcc = cv2.VideoWriter.fourcc('Y', '1', '6', ' ')
         return super().connect(
-            camera_source, fps, width, height, exposure, cvt_rgb,
+            cap_src, fps, width, height, exp, cvt_rgb,
             fourcc, max_retries, delay)
 
     def preproc(self, frame):

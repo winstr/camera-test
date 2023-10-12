@@ -86,11 +86,11 @@ def calibrate_stereo(chessboard, square_size, img_paths, img_width, img_height):
 if __name__ == '__main__':
     camera_source = '/dev/camera/oCamS-1CGN-U'
     img_width, img_height = 640, 480
-    exposure = 200
-    num_corners_col = 8
-    num_corners_row = 6
+    exposure = 500
+    num_corners_col = 10
+    num_corners_row = 7
     chessboard = (num_corners_col, num_corners_row)
-    square_size = 20.5  # mm
+    square_size = 23  # mm
 
     l_output_dir = 'out_left'
     r_output_dir = 'out_right'
@@ -100,9 +100,10 @@ if __name__ == '__main__':
     r_calib_file = 'r_calib_data_mono.pkl'
     stereo_calib_file = 'calib_data_stereo.pkl'
 
+    """
     # --- step 1. chessboard capture (mono) ---
     with ChessboardCapture_oCamS1CGNU() as ocams:
-        ocams.configure(camera_source, exposure=exposure)
+        ocams.configure(camera_source, frame_width=img_width, frame_height=img_height, exposure=exposure)
         ocams.set_chessboard(num_corners_col, num_corners_row)
         # left lense
         ocams.set_lenses(left=True, right=False)
@@ -122,16 +123,17 @@ if __name__ == '__main__':
     r_calib_data = calibrate_mono(chessboard, square_size, r_img_paths, img_width, img_height)
     save_data(r_calib_file, r_calib_data)
     print(r_calib_data['ret'])
-
+    """
+    """
     # --- step 3. chessboard capture (stereo) ---
     with ChessboardCapture_oCamS1CGNU() as ocams:
-        ocams.configure(camera_source, exposure=exposure)
+        ocams.configure(camera_source, frame_width=img_width, frame_height=img_height, exposure=exposure)
         ocams.set_chessboard(num_corners_col, num_corners_row)
         ocams.set_mono_calibration_params(l_calib_file, r_calib_file)
         # all lenses
         ocams.set_lenses(left=True, right=True)
         ocams.display('stereo', stereo_output_dir)
-
+    """
     # --- step 4. calibration (stereo) ---
     l_stereo_img_paths = glob.glob(f'{stereo_output_dir}/left_*.jpg')
     r_stereo_img_paths = glob.glob(f'{stereo_output_dir}/right_*.jpg')
@@ -142,7 +144,7 @@ if __name__ == '__main__':
 
     # --- step 5. validation ---
     with oCamS1CGNU() as ocams:
-        ocams.configure(camera_source, exposure=exposure)
+        ocams.configure(camera_source, frame_width=img_width, frame_height=img_height, exposure=exposure)
         ocams.set_stereo_calibration_params(stereo_calib_file)
         ocams.set_lenses(left=True, right=True)
         ocams.display('stereo', 'out')
