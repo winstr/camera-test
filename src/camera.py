@@ -46,6 +46,32 @@ def save_data(file_path, data):
 
 
 class Camera():
+    '''
+    A Camera class to manage the video capturing through various sources
+    like local device or online URL. It provides functionalities such as
+    connecting to a source, configuring, reading frames, and saving
+    grabbed frames.
+    
+    Attributes:
+        _cap_src (str): The video capture source, either a local device path or an online video URL.
+        _img_w (int): Width of the video frame.
+        _img_h (int): Height of the video frame.
+        _fps (float): Frames per second.
+        _exp (int): Exposure setting.
+        _cvt_rgb (float): Option to convert frame to RGB channel, 0 for False, 1 for True.
+        _cap: An OpenCV VideoCapture object.
+        _is_connected (bool): A flag indicating whether the camera is currently connected.
+        _is_configured (bool): A flag indicating whether the camera is configured.
+    
+    Methods:
+        configure(): Configure camera settings.
+        connect(): Connect to the camera.
+        disconnect(): Disconnect the camera.
+        read_frame(): Read a frame from the camera.
+        _preprocess(): A method to be implemented for preprocessing frames.
+        grab_frame(): Grab and save frames from the camera.
+        _postprocess(): A method to be implemented for postprocessing frames.
+    '''
 
     def __init__(self):
         self._cap_src = None
@@ -72,19 +98,6 @@ class Camera():
                          fps:float=30.0,
                          exp:int=200,
                          cvt_rgb:float=0.) -> None:
-        '''
-        params:
-            cap_src(str): Video capture source
-                - local device, e.g. /dev/video0
-                - online video URL, e.g. https://...
-            img_w(int): Num of pixels of frame width, e.g. 640
-            img_h(int): Num of pixels of frame height, e.g. 480
-            fps(float): Frame rate or frame per sec.  e.g. 30
-            exp(int): exposure. e.g. 200
-            cvt_rgb(float): Convert frame to RGB channel
-                - 0: False
-                - 1: True
-        '''
         self._cap_src = cap_src
         self._img_w = img_w
         self._img_h = img_h
@@ -127,28 +140,41 @@ class Camera():
     def _preprocess(self, frame:np.ndarray) -> np.ndarray:
         raise NotImplementedError()
 
-    def grab_frame(self, prefix:str='', output_dir:str=None) -> None:
-        if output_dir is None:
-            output_dir = f'out_{get_datetime()}'
-        if not os.path.isdir(output_dir):
+    def grab_frame(self,
+                   prefix:str='img',
+                   output_dir:str='out',
+                   exist_dir_ok:bool=True) -> None:
+        '''
+        Parameters:
+            prefix(str): Prefix for the filename of the saved image.
+            output_dir(str):
+                Directory where the grabbed images will be saved. Creates the directory if it
+                doesn't exist, unless exist_dir_ok is False.
+            exist_dir_ok(bool):
+                If True, the method will use an existing directory, or create it if it doesn't
+                exist. If False, an error will be raised if the directory already exists.
+        '''
+        if os.path.isdir(output_dir) and not exist_dir_ok:
+            raise FileExistsError(output_dir)
+        elif not os.path.isdir(output_dir):
             os.makedirs(output_dir)
-        i = 0
+
         while True:
             try:
                 frame = self.read_frame()
                 image = self._postprocess(frame)
-                cv2.imshow(f'{self._cap_src}: {prefix}', image)
+                cv2.imshow(prefix, image)
                 key = cv2.waitKey(1)
                 if key == ord('s'):
-                    image_file = f"{'_'.join([prefix, str(i).zfill(5)])}.jpg"
+                    image_file = f"{'_'.join([prefix, get_datetime()])}.jpg"
                     image_file = os.path.join(output_dir, image_file)
                     cv2.imwrite(image_file, image)
-                    i += 1
                 if key == ord('q'):
                     break
             except:
                 print(traceback.format_exc())
                 break
+
         cv2.destroyAllWindows()
         self.disconnect()
     
@@ -157,7 +183,7 @@ class Camera():
 
 
 class oCamS1CGNU(Camera):
-    ''' a type of stereo camera '''
+
     def __init__(self) -> None:
         super().__init__()
         self._lenses = {'left':False, 'right':False}
