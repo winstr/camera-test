@@ -1,27 +1,33 @@
+'''
+@ author: Seunghyeon Kim (winstr)
+@ date:
+'''
+
 import os
 import pickle
 import traceback
 from datetime import datetime
+from collections import namedtuple
 
 import cv2
 import numpy as np
 
 
 class NotConfiguredError(RuntimeError):
-    def __init__(self, cap_src) -> None:
-        msg = f'Not configured: {cap_src}'
+    def __init__(self, camera_source) -> None:
+        msg = f'Not configured: {camera_source}'
         super().__init__(msg)
 
 
 class FailedToConnectError(RuntimeError):
-    def __init__(self, cap_src) -> None:
-        msg = f'Failed to connect: {cap_src}.'
+    def __init__(self, camera_source) -> None:
+        msg = f'Failed to connect: {camera_source}.'
         super().__init__(msg)
 
 
 class FailedToReadError(RuntimeError):
-    def __init__(self, cap_src) -> None:
-        msg = f'Failed to read_frame: {cap_src}.'
+    def __init__(self, camera_source) -> None:
+        msg = f'Failed to read_frame: {camera_source}.'
         super().__init__(msg)
 
 
@@ -53,13 +59,13 @@ class Camera():
     grabbed frames.
     
     Attributes:
-        _cap_src (str): The video capture source, either a local device path or an online video URL.
-        _img_w (int): Width of the video frame.
-        _img_h (int): Height of the video frame.
+        _camera_source (str): The video capture source, either a local device path or an online video URL.
+        _frame_width (int): Width of the video frame.
+        _frame_height (int): Height of the video frame.
         _fps (float): Frames per second.
-        _exp (int): Exposure setting.
+        _exposure (int): Exposure setting.
         _cvt_rgb (float): Option to convert frame to RGB channel, 0 for False, 1 for True.
-        _cap: An OpenCV VideoCapture object.
+        _camera: An OpenCV VideoCapture object.
         _is_connected (bool): A flag indicating whether the camera is currently connected.
         _is_configured (bool): A flag indicating whether the camera is configured.
     
@@ -74,13 +80,13 @@ class Camera():
     '''
 
     def __init__(self):
-        self._cap_src = None
-        self._img_w = None
-        self._img_h = None
+        self._camera_source = None
+        self._frame_width = None
+        self._frame_height = None
         self._fps = None
-        self._exp = None
+        self._exposure = None
         self._cvt_rgb = None
-        self._cap = None
+        self._camera = None
 
         self._is_connected = False
         self._is_configured = False
@@ -92,48 +98,55 @@ class Camera():
         self.disconnect()
 
     def configure(self,
-                         cap_src:str,
-                         img_w:int=640,
-                         img_h:int=480,
+                         camera_source:str,
+                         frame_width:int=640,
+                         frame_height:int=480,
                          fps:float=30.0,
-                         exp:int=200,
+                         exposure:int=200,
                          cvt_rgb:float=0.) -> None:
-        self._cap_src = cap_src
-        self._img_w = img_w
-        self._img_h = img_h
+        self._camera_source = camera_source
+        self._frame_width = frame_width
+        self._frame_height = frame_height
         self._fps = fps
-        self._exp = exp
+        self._exposure = exposure
         self._cvt_rgb = cvt_rgb
+
         self._is_configured = True
 
     def connect(self) -> None:
         if not self._is_configured:
-            raise NotConfiguredError(self._cap_src)
+            raise NotConfiguredError(self._camera_source)
+
         self.disconnect()
-        self._cap = cv2.VideoCapture(self._cap_src)
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._img_w)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._img_h)
-        self._cap.set(cv2.CAP_PROP_FPS, self._fps)
-        self._cap.set(cv2.CAP_PROP_EXPOSURE, self._exp)
-        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, self._cvt_rgb)
+        self._camera = cv2.VideoCapture(self._camera_source)
+        self._camera.set(cv2.CAP_PROP_FRAME_WIDTH, self._frame_width)
+        self._camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self._frame_height)
+        self._camera.set(cv2.CAP_PROP_FPS, self._fps)
+        self._camera.set(cv2.CAP_PROP_EXPOSURE, self._exposure)
+        self._camera.set(cv2.CAP_PROP_CONVERT_RGB, self._cvt_rgb)
+
         self._is_connected = True
-        if not self._cap.isOpened():
+
+        if not self._camera.isOpened():
             self.disconnect()
-            raise FailedToConnectError(self._cap_src)
+            raise FailedToConnectError(self._camera_source)
 
     def disconnect(self) -> None:
         if self._is_connected:
-            self._cap.release()
-            self._cap = None
+            self._camera.release()
+            self._camera = None
+
             self._is_connected = False
 
     def read_frame(self) -> np.ndarray:
         if not self._is_connected:
             self.connect()
-        ret, frame = self._cap.read()
+
+        ret, frame = self._camera.read()
         if not ret:
             self.disconnect()
-            raise FailedToReadError(self._cap_src)
+            raise FailedToReadError(self._camera_source)
+
         frame = self._preprocess(frame)
         return frame
 
@@ -164,6 +177,7 @@ class Camera():
                 frame = self.read_frame()
                 image = self._postprocess(frame)
                 cv2.imshow(prefix, image)
+
                 key = cv2.waitKey(1)
                 if key == ord('s'):
                     image_file = f"{'_'.join([prefix, get_datetime()])}.jpg"
@@ -171,6 +185,7 @@ class Camera():
                     cv2.imwrite(image_file, image)
                 if key == ord('q'):
                     break
+
             except:
                 print(traceback.format_exc())
                 break
@@ -182,104 +197,132 @@ class Camera():
         raise NotImplementedError()
 
 
-class oCamS1CGNU(Camera):
+class StereoCamera(Camera):
+    # oCamS-1CGN-U
+
+    __UndistortMono = namedtuple('__UndistortMono', ['mtx', 'dist'])
+    __UndistortStereo = namedtuple('__UndistortStereo', ['map_1', 'map_2'])
 
     def __init__(self) -> None:
         super().__init__()
-        self._lenses = {'left':False, 'right':False}
+        self._lens_selection = {
+            'left':True,
+            'right':True}
+        self._undistort_mono = {
+            'left': self.__UndistortMono(mtx=None, dist=None),
+            'right': self.__UndistortMono(mtx=None, dist=None)}
+        self._undistort_stereo = {
+            'left': self.__UndistortStereo(map_1=None, map_2=None),
+            'right': self.__UndistortStereo(map_1=None, map_2=None)}
 
-        self._l_calib_data_mono = None  # left
-        self._r_calib_data_mono = None  # right
+    def select_lens(self, left:bool, right:bool) -> None:
+        self._lens_selection['left'] = left
+        self._lens_selection['right'] = right
 
-        self._calib_data_stereo = None
-        self._l_map = None
-        self._r_map = None
+    def is_initialized_mono_calibration_data(self) -> bool:
+        for lens in self._lens_selection.keys():
+            if not self._lens_selection[lens]:
+                continue
+            calib_data = self._undistort_mono[lens]
+            if calib_data.mtx is None or calib_data.dist is None:
+                return False
+        return True
 
-    def set_lenses(self, left:bool, right:bool) -> None:
-        self._lenses['left'] = left
-        self._lenses['right'] = right
+    def is_initialized_stereo_calibration_data(self) -> bool:
+        for lens in self._lens_selection.keys():
+            if not self._lens_selection[lens]:
+                continue
+            calib_data = self._undistort_stereo[lens]
+            if calib_data.map_1 is None or calib_data.map_2 is None:
+                return False
+        return True
 
-    def set_mono_calibration_params(self, l_calib_file, r_calib_file) -> None:
-        if self._calib_data_stereo is not None:
-            self._calib_data_mono_left = None
-            self._calib_data_mono_right = None
-            print('stereo calibration is already applied.')
+    def empty_mono_calibration_data(self) -> None:
+        for lens in self._lens_selection.keys():
+            calib_data = self._undistort_mono[lens]
+            calib_data.mtx = None
+            calib_data.dist = None
+
+    def empty_stereo_calibration_data(self) -> None:
+        for lens in self._lens_selection.keys():
+            calib_data = self._undistort_stereo[lens]
+            calib_data.map_1 = None
+            calib_data.map_2 = None
+
+    def load_mono_calibration_data(self,
+                                   left_calib_file:str=None,
+                                   right_calib_file:str=None) -> None:
+        if self.is_initialized_stereo_calibration_data():
+            self.empty_mono_calibration_data()
+            print('Cannot load mono calibration files because stereo calibration'
+                  ' is already applied.')
             return
-        self._l_calib_data_mono = load_data(l_calib_file)
-        self._r_calib_data_mono = load_data(r_calib_file)
 
-    def set_stereo_calibration_params(self, calib_file) -> None:
-        if self._l_calib_data_mono is not None and self._r_calib_data_mono is not None:
-            self._l_calib_data_mono = None
-            self._r_calib_data_mono = None
-            print('mono calibrations are disabled.')
-        self._calib_data_stereo = load_data(calib_file)
+        calib_files = {'left': left_calib_file, 'right': right_calib_file}
+        for lens in self._lens_selection.keys():
+            if not os.path.isfile(calib_files[lens]):
+                raise FileNotFoundError(calib_files[lens])
+            if not self._lens_selection[lens] and calib_files[lens] is not None:
+                msg = (f'Cannot load the {calib_files[lens]} becuase the '
+                       f'{lens}-side lens is disabled. : {self._lens_selection}')
+                raise ValueError(msg)
+            calib = load_data(calib_files[lens])
+            calib_data = self._undistort_mono[lens]
+            calib_data.mtx = calib.mtx
+            calib_data.dist = calib.dist
+
+    def load_stereo_calibration_data(self, calib_file:str) -> None:
+        if self.is_initialized_mono_calibration_data():
+            self.empty_mono_calibration_data()
+            print('Mono calibrations are disabled.')
+
+        if not os.path.isfile(calib_file):
+            raise FileNotFoundError(calib_file)
+        calib = load_data(calib_file)
+
+        w = self._frame_width
+        h = self._frame_height
 
         R1, R2, P1, P2, _, _, _ = cv2.stereoRectify(
-            self._calib_data_stereo['l_mtx'],
-            self._calib_data_stereo['l_dist'],
-            self._calib_data_stereo['r_mtx'],
-            self._calib_data_stereo['r_dist'],
-            (self._img_w, self._img_h),
-            self._calib_data_stereo['R'],
-            self._calib_data_stereo['T'])
-        
-        l_map_1st, l_map_2nd = cv2.initUndistortRectifyMap(
-            self._calib_data_stereo['l_mtx'],
-            self._calib_data_stereo['l_dist'],
-            R1,
-            P1,
-            (self._img_w, self._img_h),
-            cv2.CV_16SC2)
+            calib.l_mtx, calib.l_dist, calib.r_mtx, calib.r_dist, (w, h), calib.R, calib.T)
 
-        r_map_1st, r_map_2nd = cv2.initUndistortRectifyMap(
-            self._calib_data_stereo['r_mtx'],
-            self._calib_data_stereo['r_dist'],
-            R2,
-            P2,
-            (self._img_w, self._img_h),
-            cv2.CV_16SC2)
+        (self._undistort_stereo['left'].map_1,
+         self._undistort_stereo['left'].map_2) = cv2.initUndistortRectifyMap(
+             calib.l_mtx, calib.l_dist, R1, P1, (w, h), cv2.CV_16SC2)
 
-        self._l_map = (l_map_1st, l_map_2nd)
-        self._r_map = (r_map_1st, r_map_2nd)
-
-    def empty_all_calibration_params(self) -> None:
-        self._l_calib_data_mono = None
-        self._r_calib_data_mono = None
-        self._calib_data_stereo = None
-        self._l_map = None
-        self._r_map = None
+        (self._undistort_stereo['right'].map_1,
+         self._undistort_stereo['right'].map_2) = cv2.initUndistortRectifyMap(
+             calib.r_mtx, calib.r_dist, R2, P2, (w, h), cv2.CV_16SC2)
 
     def _preprocess(self, frame) -> np.ndarray:
-        r_frame, l_frame = cv2.split(frame)  # right, left
-        l_frame = cv2.cvtColor(l_frame, cv2.COLOR_BAYER_GB2BGR)
-        r_frame = cv2.cvtColor(r_frame, cv2.COLOR_BAYER_GB2BGR)
+        r_frame, l_frame = cv2.split(frame)
+        frames = {'left': l_frame, 'right': r_frame}
 
-        if self._l_calib_data_mono is not None and self._r_calib_data_mono is not None:
-            l_frame = undistort_image(
-                l_frame, self._l_calib_data_mono['mtx'], self._l_calib_data_mono['dist'])
-            r_frame = undistort_image(
-                r_frame, self._r_calib_data_mono['mtx'], self._r_calib_data_mono['dist'])
+        # Mono Calibration
+        for lens in self._lens_selection.keys():
+            if not self._lens_selection[lens]:
+                continue
+            frames[lens] = cv2.cvtColor(frames[lens], cv2.COLOR_BAYER_GB2BGR)
+            if self.is_initialized_mono_calibration_data():
+                calib_data = self._undistort_mono[lens]
+                frames[lens] = undistort_image(frames[lens], calib_data.mtx, calib_data.dist)
 
-        if self._calib_data_stereo is not None:
-            l_frame = cv2.remap(l_frame, self._l_map[0], self._l_map[1], cv2.INTER_LINEAR)
-            r_frame = cv2.remap(r_frame, self._r_map[0], self._r_map[1], cv2.INTER_LINEAR)
-
-        frames = {'left': None, 'right': None}
-        if self._lenses['left']:
-            frames['left'] = l_frame
-        if self._lenses['right']:
-            frames['right'] = r_frame
+        # Stereo Calibration
+        if self.is_initialized_stereo_calibration_data():
+            for lens in self._lens_selection.keys():
+                calib_data = self._undistort_stereo[lens]
+                frames[lens] = cv2.remap(
+                    frames[lens], calib_data.map_1, calib_data.map_2, cv2.INTER_LINEAR)
 
         return frames
     
     def _postprocess(self, frames) -> np.ndarray:
-        frame = []
-        if frames['left'] is not None:
-            frame.append(frames['left'])
-        if frames['right'] is not None:
-            frame.append(frames['right'])
-        image = cv2.hconcat(frame)
+        buffer = []
+        for lens in self._lens_selection.keys():
+            if self._lens_selection[lens]:
+                buffer.append(frames[lens])
+        
+        image = cv2.hconcat(buffer)
         return image
 
 
@@ -313,7 +356,7 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
             try:
                 frames = self.read_frame()
                 image = self._postprocess(frames)
-                cv2.imshow(f'{self._cap_src}: {self._lenses}', image)
+                cv2.imshow(f'{self._camera_source}: {self._lenses}', image)
                 key = cv2.waitKey(1)
                 if key == ord('s'):
                     if self._lenses['left']:
@@ -356,7 +399,7 @@ class ChessboardCapture_oCamS1CGNU(oCamS1CGNU):
             image = r_frame
         else:
             print(f'Warning: All lenses are disabled: {self._lenses}')
-            image = np.zeros((self._img_h, self._img_w, 3))
+            image = np.zeros((self._frame_height, self._frame_width, 3))
         return image
 
 """
@@ -373,17 +416,17 @@ class ThermoCam160B(Camera):
         super().__init__()
 
     def connect(self,
-                cap_src,
+                camera_source,
                 fps=FPS,
                 width=FRAME_WIDTH,
                 height=FRAME_HEIGHT,
-                exp=0,
+                exposure=0,
                 cvt_rgb=0,
                 max_retries=5,
                 delay=2):
         fourcc = cv2.VideoWriter.fourcc('Y', '1', '6', ' ')
         return super().connect(
-            cap_src, fps, width, height, exp, cvt_rgb,
+            camera_source, fps, width, height, exposure, cvt_rgb,
             fourcc, max_retries, delay)
 
     def preproc(self, frame):
