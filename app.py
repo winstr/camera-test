@@ -1,29 +1,48 @@
+from typing import Generator
+
+import cv2
+import numpy as np
 from flask import Flask, Response
 from flask import redirect, url_for
 
-from camera import oCamS_1CGN_U, ThermoCam160B
+#from camera import oCamS_1CGN_U, ThermoCam160B
+from src.camera import CameraCapture
+from tools.visible_camera import Picam2Gstreamer
+from tools.thermal_camera import ThermoCam160B
 
 
-STEREO_CAM = oCamS_1CGN_U()
-STEREO_CAM.connect('/dev/camera/oCamS-1CGN-U',
-                   fps=9,
-                   exposure=400)
+PICAM = Picam2Gstreamer()
+PICAM.config_capture_mode(capture_mode=0, fps=9)
+PICAM.config_frame_resize(640, 480)
+PICAM.connect(cap_source='0')
 
-THERMO_CAM = ThermoCam160B()
-THERMO_CAM.connect('/dev/camera/ThermoCam160B')
+THCAM = ThermoCam160B()
+THCAM.config_frame_resize(640, 480)
+THCAM.connect(cap_source='/dev/cam/ThermoCam160B')
+
+
+def gen_frames(cam: CameraCapture) -> Generator[bytes, None, None]:
+    while True:
+        frame = cam.read()
+        ret, buffer = cv2.imencode('.jpg', frame)
+        if ret:
+            frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
+
 
 APP = Flask(__name__)
 
 
-@APP.route('/video_feed_stereo')
+@APP.route('/video_feed_picam')
 def video_feed_stereo():
-    return Response(STEREO_CAM.gen_frames(),
+    return Response(gen_frames(PICAM),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-@APP.route('/video_feed_thermo')
+@APP.route('/video_feed_ircam')
 def video_feed_thermo():
-    return Response(THERMO_CAM.gen_frames(dsize=(640, 480)),
+    return Response(gen_frames(THCAM),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
@@ -32,8 +51,8 @@ def index():
     return '''
     <html>
     <body>
-        <img src="/video_feed_stereo">
-        <img src="/video_feed_thermo">
+        <img src="/video_feed_picam">
+        <img src="/video_feed_ircam">
     </body>
     </html>
     '''
@@ -45,5 +64,5 @@ if __name__ == '__main__':
     except:
         pass
     finally:
-        STEREO_CAM.release()
-        THERMO_CAM.release()
+        PICAM.disconnect()
+        THCAM.disconnect()
