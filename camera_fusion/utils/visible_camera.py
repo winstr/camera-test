@@ -3,11 +3,11 @@ import numpy as np
 
 from overrides import overrides
 
-from src.camera import CaptureMode
-from src.camera import CameraCapture
-from src.camera import FailedOpenError
-from src.camera import UnsupportedMode
-from src.camera import InvalidFPSValue
+from camera_fusion.camera import CaptureMode
+from camera_fusion.camera import CameraCapture
+from camera_fusion.camera import FailedOpenError
+from camera_fusion.camera import UnsupportedMode
+from camera_fusion.camera import InvalidFPSValue
 
 
 class Picam2Gstreamer(CameraCapture):

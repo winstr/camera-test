@@ -1,14 +1,13 @@
 from typing import Generator
 
 import cv2
-import numpy as np
+#import numpy as np
 from flask import Flask, Response
-from flask import redirect, url_for
+#from flask import redirect, url_for
 
-#from camera import oCamS_1CGN_U, ThermoCam160B
-from src.camera import CameraCapture
-from tools.visible_camera import Picam2Gstreamer
-from tools.thermal_camera import ThermoCam160B
+from camera_fusion.camera import CameraCapture
+from camera_fusion.utils.visible_camera import Picam2Gstreamer
+from camera_fusion.utils.thermal_camera import ThermoCam160B
 
 
 PICAM = Picam2Gstreamer()

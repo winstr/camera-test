@@ -4,7 +4,7 @@ from matplotlib.pyplot import cm
 
 from overrides import overrides
 
-from src.camera import CameraCapture
+from camera_fusion.camera import CameraCapture
 
 
 class UnsupportedMode(RuntimeError): pass
