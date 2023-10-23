@@ -95,7 +95,6 @@ class oCamS1CGNU(CameraCapture):
     @overrides
     def connect(self, cap_source: str) -> None:
         super().connect(cap_source)
-        print(self.capture_mode)
         cap_w, cap_h, cap_fps = self.capture_mode.values()
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cap_w)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cap_h)
@@ -112,4 +111,12 @@ class oCamS1CGNU(CameraCapture):
         r_frame = cv2.resize(r_frame, (dst_w, dst_h))
         frame = l_frame # temporary
         #frame = cv2.hconcat([l_frame, r_frame])
+        return frame
+
+    def preprocess_(self, frame: np.ndarray) -> np.ndarray:
+        frame = self.preprocess(frame)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = cv2.GaussianBlur(frame, (0, 0), 2)
+        frame = cv2.equalizeHist(frame)
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         return frame

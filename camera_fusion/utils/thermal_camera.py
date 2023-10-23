@@ -36,21 +36,7 @@ class ThermoCam160B(CameraCapture):
         self.cap.set(cv2.CAP_PROP_FOURCC,
                      cv2.VideoWriter.fourcc('Y', '1', '6', ' '))
 
-    '''
-    @overrides
-    def read(self) -> np.ndarray:
-        frame = super().read()
-        frame = frame / 65535.0  # rescale 0~65535(16bit img) to 0~1
-        frame = frame * (self.max_temp - self.min_temp)
-        frame = (frame - np.min(frame)) / (np.max(frame) - np.min(frame))
-        frame = cm.plasma(frame)
-        frame = frame[:, :, :3]
-        frame = frame[:, :, ::-1]
-        frame = (frame * 255).astype(np.uint8)  # rescale to 0~255(8bit img)
-        frame = cv2.resize(frame, (self.dst_width, self.dst_height))
-        return frame
-    '''
-
+    """
     @overrides
     def preprocess(self, frame:np.ndarray) -> np.ndarray:
         frame = frame / 65535.0  # rescale 0~65535(16bit img) to 0~1
@@ -61,4 +47,15 @@ class ThermoCam160B(CameraCapture):
         frame = frame[:, :, ::-1]
         frame = (frame * 255).astype(np.uint8)  # rescale to 0~255(8bit img)
         frame = cv2.resize(frame, (self.dst_width, self.dst_height))
+        return frame
+    """
+
+    @overrides
+    def preprocess(self, frame:np.ndarray) -> np.ndarray:
+        frame = frame / 65535.0
+        frame = (frame - np.min(frame)) / (np.max(frame) - np.min(frame))
+        frame = (frame * 255).astype(np.uint8)  # rescale to 0~255(8bit img)
+        frame = cv2.resize(frame, (self.dst_width, self.dst_height))
+        frame = cv2.equalizeHist(frame)
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
         return frame

@@ -3,6 +3,7 @@ import logging
 import traceback
 
 import cv2
+import numpy as np
 
 from camera_fusion.utils.visible_camera import oCamS1CGNU
 from camera_fusion.utils.thermal_camera import ThermoCam160B
@@ -13,9 +14,17 @@ logging.basicConfig(format="[ %(asctime)s, %(levelname)s ] %(message)s",
                     level=logging.INFO)
 
 
+def detect_edge_canny(img:np.ndarray, min_thresh:int=60, max_thresh:int=200):
+    img_canny = cv2.Canny(img, min_thresh, max_thresh)
+    return img_canny
+
+
 def main():
     frame_width = 640
     frame_height = 480
+
+    min_thresh = 50
+    max_thresh = 100
 
     stcam = oCamS1CGNU()
     stcam.config_capture_mode(2, 45)
@@ -33,14 +42,21 @@ def main():
         while True:
             stcam.grab()
             ircam.grab()
-            stimg = stcam.preprocess(stcam.retrieve())
+            stimg = stcam.preprocess_(stcam.retrieve())
             irimg = ircam.preprocess(ircam.retrieve())
 
             stimg = cv2.flip(stimg, 0)
             irimg = cv2.flip(irimg, 0)
 
-            frame = cv2.hconcat([stimg, irimg])
-            cv2.imshow('res', frame)
+            concat1 = cv2.hconcat([stimg, irimg])
+
+            stimg = detect_edge_canny(stimg, min_thresh, max_thresh)
+            irimg = detect_edge_canny(irimg, min_thresh, max_thresh)
+
+            concat2 = cv2.hconcat([stimg, irimg])
+            concat2 = cv2.cvtColor(concat2, cv2.COLOR_GRAY2BGR)
+
+            cv2.imshow('res', cv2.vconcat([concat1, concat2]))
             if cv2.waitKey(200) == ord('q'):
                 break
     except:
