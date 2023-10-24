@@ -5,7 +5,7 @@ import cv2
 from flask import Flask, Response
 #from flask import redirect, url_for
 
-from camera_fusion.camera import CameraCapture
+from camera_fusion.camera_fusion.capture import CameraCapture
 from camera_fusion.utils.visible_camera import Picam2Gstreamer
 from camera_fusion.utils.thermal_camera import ThermoCam160B
 

@@ -3,7 +3,7 @@ import traceback
 
 import cv2
 
-from camera_fusion.camera import CameraCapture
+from camera_fusion.camera_fusion.capture import CameraCapture
 from camera_fusion.utils.visible_camera import Picam2Gstreamer
 from camera_fusion.utils.visible_camera import oCamS1CGNU
 from camera_fusion.utils.thermal_camera import ThermoCam160B

@@ -14,20 +14,31 @@ logging.basicConfig(format="[ %(asctime)s, %(levelname)s ] %(message)s",
                     level=logging.INFO)
 
 
-def detect_edge_canny(img:np.ndarray, min_thresh:int=60, max_thresh:int=200):
-    img_canny = cv2.Canny(img, min_thresh, max_thresh)
-    return img_canny
+SHARPENING_MASK = np.array([[-1, -1, -1],
+                            [-1,  9, -1],
+                            [-1, -1, -1]])
+CANNY_MAX_THRES = 200
+CANNY_MIN_THERS = 60
+
+
+def crop(img:np.ndarray):
+    def helper(x:int):
+        x_adj = int(x * 0.75)
+        gap = int((x - x_adj) / 2)
+        return x_adj, gap
+    img_width, img_height = img.shape[:2][::-1]
+    img_width_adj, w_gap = helper(img_width)
+    img_height_adj, h_gap = helper(img_height)
+    img_crop = img[h_gap:h_gap+img_height_adj, w_gap:w_gap+img_width_adj, :]
+    return img_crop
 
 
 def main():
     frame_width = 640
     frame_height = 480
 
-    min_thresh = 50
-    max_thresh = 100
-
     stcam = oCamS1CGNU()
-    stcam.config_capture_mode(2, 45)
+    stcam.config_capture_mode(2)
     stcam.config_frame_resize(frame_width, frame_height)
     stcam.connect("/dev/camera/oCamS-1CGN-U")
 
@@ -42,21 +53,13 @@ def main():
         while True:
             stcam.grab()
             ircam.grab()
-            stimg = stcam.preprocess_(stcam.retrieve())
-            irimg = ircam.preprocess(ircam.retrieve())
 
-            stimg = cv2.flip(stimg, 0)
-            irimg = cv2.flip(irimg, 0)
+            stimg = cv2.flip(stcam.preprocess(stcam.retrieve()), 0)
+            stimg = crop(stimg)
+            irimg = cv2.flip(ircam.preprocess(ircam.retrieve()), 0)
 
-            concat1 = cv2.hconcat([stimg, irimg])
+            print(stimg.shape, irimg.shape)
 
-            stimg = detect_edge_canny(stimg, min_thresh, max_thresh)
-            irimg = detect_edge_canny(irimg, min_thresh, max_thresh)
-
-            concat2 = cv2.hconcat([stimg, irimg])
-            concat2 = cv2.cvtColor(concat2, cv2.COLOR_GRAY2BGR)
-
-            cv2.imshow('res', cv2.vconcat([concat1, concat2]))
             if cv2.waitKey(200) == ord('q'):
                 break
     except:
