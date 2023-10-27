@@ -176,7 +176,7 @@ if __name__ == '__main__':
     """
     # oCamS-1CGN-U
     cam = get_ocams()
-    fn = lambda frame: OCamS1CGNU.split(frame).left
+    fn = lambda frame: OCamS1CGNU.split(frame, True)['right']
     """
     """
     # RaspberryPiCamera2
