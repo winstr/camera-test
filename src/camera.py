@@ -1,6 +1,6 @@
 """
 -------------------------------
-Author: winstr
+Author: Seunghyeon Kim
 -------------------------------
 
 Functions:
@@ -14,7 +14,7 @@ Classes:
 """
 
 import traceback
-from typing import Union, Dict
+from typing import Tuple, Union, Callable, Dict
 
 import cv2
 import numpy as np
@@ -43,6 +43,13 @@ def get_gstreamer_pipeline(sensor_id: int=0,
 
 class Camera():
     """ An wrapping class of cv2.VideoCapture """
+
+    @staticmethod
+    def preproc(frame: np.ndarray,
+                dsize: Tuple[int, int]=None,
+                color_mode: int=None) -> np.ndarray:
+        # TODO
+        return frame
 
     def __init__(self):
         self._source = None   # e.g. /dev/video0 ...
@@ -97,16 +104,19 @@ class Camera():
         return frame
 
 
+class RaspberryPiCamera2(Camera):
+    """ A Type of Visible or NoIR Camera """
+
+    def initialize(self, sensor_id:int, gstreamer_pipeline:str):
+        self.release()
+        self._cap = cv2.VideoCapture(gstreamer_pipeline)
+        if not self._cap.isOpened():
+            raise RuntimeError(f'Failed to open {self._source}')
+        self._source = sensor_id
+
+
 class OCamS1CGNU(Camera):
     """ A Type of Stereo Camera """
-
-    @staticmethod
-    def split(frame: np.ndarray, to_bgr: bool) -> Dict[np.ndarray, np.ndarray]:
-        r_frame, l_frame = cv2.split(frame)
-        if to_bgr:
-            r_frame = cv2.cvtColor(r_frame, cv2.COLOR_BAYER_GB2BGR)
-            l_frame = cv2.cvtColor(l_frame, cv2.COLOR_BAYER_GB2BGR)
-        return {'right': r_frame, 'left': l_frame}
 
     def initialize(self,
                    source: Union[int, str],
@@ -114,10 +124,12 @@ class OCamS1CGNU(Camera):
                    height: int,
                    fps: int):
         super().initialize(source, width, height, fps)
-        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)  # Bayer
 
     def set_exposure(self, exposure: int):
         self._cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+
+    def set_cvt_rgb(self, cvt_rgb: float):
+        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, cvt_rgb)
 
 
 class ThermoCam160B(Camera):
@@ -142,24 +154,13 @@ class ThermoCam160B(Camera):
                       cv2.VideoWriter.fourcc('Y', '1', '6', ' '))
 
 
-class RaspberryPiCamera2(Camera):
-    """ A Type of Visible or NoIR Camera """
-
-    def initialize(self, sensor_id:int, gstreamer_pipeline:str):
-        self.release()
-        self._cap = cv2.VideoCapture(gstreamer_pipeline)
-        if not self._cap.isOpened():
-            raise RuntimeError(f'Failed to open {self._source}')
-        self._source = sensor_id
-
-
 if __name__ == '__main__':
     # Usage
 
     def get_ocams():
         ocams = OCamS1CGNU()
         ocams.initialize('/dev/cam/oCamS-1CGN-U', 640, 480, 45)
-        ocams.set_exposure(200)
+        ocams.set_exposure(0)
         return ocams
     
     def get_picam():
@@ -172,32 +173,44 @@ if __name__ == '__main__':
         ircam = ThermoCam160B()
         ircam.initialize('/dev/cam/ThermoCam160B', 160, 120, 9)
         return ircam
-    
-    """
-    # oCamS-1CGN-U
-    cam = get_ocams()
-    fn = lambda frame: OCamS1CGNU.split(frame, True)['right']
-    """
-    """
-    # RaspberryPiCamera2
-    cam = get_picam()
-    fn = lambda frame: frame
-    """
-    #"""
-    # ThermoCam160B
-    cam = get_ircam()
-    fn = lambda frame: cv2.resize(ThermoCam160B.normalize(frame), (640, 480))
-    #"""
+
+    ocams = get_ocams()
+    #ocams_fn = lambda frame: cv2.cvtColor(cv2.split(frame)[0], cv2.COLOR_BAYER_GB2BGR)
+    ocams_fn = lambda frame: frame
+
+    picam = get_picam()
+    picam_fn = lambda frame: frame
+
+    ircam = get_ircam()
+    ircam_fn = lambda frame: cv2.cvtColor(cv2.resize(ThermoCam160B.normalize(frame), (640, 480)),
+                                          cv2.COLOR_GRAY2BGR)
+
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    dsize = (640, 480)
+    #picam_out = cv2.VideoWriter('picam.mp4', fourcc, 9.0, dsize)
+    #ocams_out = cv2.VideoWriter('ocams.mp4', fourcc, 9.0, dsize)
+    #ircam_out = cv2.VideoWriter('ircam.mp4', fourcc, 9.0, dsize)
 
     try:
         while True:
-            frame = cam.read()
-            frame = fn(frame)
-            cv2.imshow('display', frame)
-            if cv2.waitKey(1) == ord('q'):
+            picam.grab()
+            ocams.grab()
+            ircam.grab()
+            
+            picam_frame = picam_fn(picam.retrieve())  # frame 1
+            ocams_frame = ocams_fn(ocams.retrieve())  # frame 2
+            ircam_frame = ircam_fn(ircam.retrieve())  # frame 3
+
+            #picam_out.write(picam_frame)
+            #ocams_out.write(ocams_frame)
+            #ircam_out.write(ircam_frame)
+
+            concat = cv2.hconcat([picam_frame, ocams_frame, ircam_frame])
+            cv2.imshow('display', concat)
+            if cv2.waitKey(int(1000/45)) == ord('q'):
                 break
     except:
         traceback.print_exc()
 
     cv2.destroyAllWindows()
-    cam.release()
+    ircam.release()
