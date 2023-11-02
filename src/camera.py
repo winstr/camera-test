@@ -1,157 +1,216 @@
-from dataclasses import dataclass, field
-from typing import Tuple, List
+"""
+-------------------------------
+Author: Seunghyeon Kim
+-------------------------------
+
+Functions:
+    get_gstreamer_pipeline(int, int, int, int, int, int) -> str
+
+Classes:
+    Camera()
+    OCamS1CGNU(Camera)
+    ThermoCam160B(Camera)
+    RaspberryPiCamera2(Camera)
+"""
+
+import traceback
+from typing import Tuple, Union, Callable, Dict
 
 import cv2
 import numpy as np
 
 
-class FailedOpenError(RuntimeError): pass
-class FailedReadError(RuntimeError): pass
-class ClassInitError(RuntimeError): pass
-class UnsupportedFPSError(RuntimeError): pass
+def get_gstreamer_pipeline(sensor_id: int=0,
+                           src_width: int=3624,
+                           src_height: int=2464,
+                           fps: int=21,
+                           dst_width: int=640,
+                           dst_height: int=480) -> str:
+
+    # for NVIDIA Jetson
+    pipeline = (
+        f'nvarguscamerasrc sensor-id={sensor_id} '
+        f'wbmode=3 tnr-mode=2 tnr-strength=1 ee-mode=2 '
+        f'ee-strength=1 ! video/x-raw(memory:NVMM), '
+        f'width={src_width}, height={src_height}, '
+        f'format=NV12, framerate={fps}/1 ! nvvidconv flip-method=0 ! '
+        f'video/x-raw, width={dst_width}, height={dst_height}, '
+        f'format=BGRx ! videoconvert ! video/x-raw, format=BGR ! '
+        f'videobalance contrast=1.5 brightness=-.2 saturation=1.2 ! appsink')
+
+    return pipeline
 
 
-@dataclass
-class CaptureMode():
-    capture_width: int
-    capture_height: int
-    capture_fps: List[int] = field(default_factory=list)
+class Camera():
+    """ An wrapping class of cv2.VideoCapture """
 
-    def values(self) -> Tuple[int, int, List[int]]:
-        return self.capture_width, self.capture_height, self.capture_fps
-
-
-class CameraCapture():
+    @staticmethod
+    def preproc(frame: np.ndarray,
+                dsize: Tuple[int, int]=None,
+                color_mode: int=None) -> np.ndarray:
+        # TODO
+        return frame
 
     def __init__(self):
-        self._capture = None
-        self._capture_source = None
-        self._grabbed = False
+        self._source = None   # e.g. /dev/video0 ...
+        self._cap = None      # video capture instance
+        self._grab = False    # grab state
 
-    def is_connected(self) -> bool:
-        return self.cap is not None and self.cap.isOpened()
+    def __del__(self):
+        self.release()
 
-    def configure(self, capture_source:str):
-        self._capture_source = capture_source
-        self._capture = cv2.VideoCapture(self._capture_source)
-        if not self._capture.isOpened():
-            raise FailedOpenError(self._capture_source)
+    def initialize(self,
+                   source: Union[int, str],
+                   src_width: int,
+                   src_height: int,
+                   src_fps: int):
+
+        print(
+        '[ WARNING ] '
+        'During the camera initialization phase, src_width, src_height, '
+        'and fps should be initialized with camera mode values provided '
+        'by the camera manufacturer. DO NOT PUT ARBITRARY VALUES !!')
+
+        self.release()
+        self._source = source
+        self._cap = cv2.VideoCapture(self._source)
+        if not self._cap.isOpened():
+            raise RuntimeError(f'Failed to open {self._source}')
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, src_width)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, src_height)
+        self._cap.set(cv2.CAP_PROP_FPS, src_fps)
 
     def release(self):
-        if self._capture is not None and self._capture.isOpened():
-            self._capture.release()
-            self._capture = None
-            self._capture_source = None
-            self._grabbed = False
+        if self._cap is not None:
+            self._cap.release()
+            self._cap = None
 
     def read(self) -> np.ndarray:
-        ret, frame = self._capture.read()
+        ret, frame = self._cap.read()
         if not ret:
-            raise FailedReadError(self._capture_source)
+            raise RuntimeError(f'Failed to read {self._source}')
         return frame
 
     def grab(self):
-        self._grabbed = self._capture.grab()
+        self._grab = self._cap.grab()
 
     def retrieve(self) -> np.ndarray:
-        if not self._grabbed:
-            raise FailedReadError(self._capture_source)
-        self._grabbed = False
-        ret, frame = self._capture.retrieve()
+        if not self._grab:
+            raise RuntimeError(f'Failed to grab {self._source}')
+        self._grab = False
+        ret, frame = self._cap.retrieve()
         if not ret:
-            raise FailedReadError(self._capture_source)
+            raise RuntimeError(f'Failed to read {self._source}')
         return frame
 
 
-class Camera(CameraCapture):
+class RaspberryPiCamera2(Camera):
+    """ A Type of Visible or NoIR Camera """
 
-    CAPTURE_MODES = {}
-
-    def __new__(cls):
-        if cls is Camera:
-            raise ClassInitError()
-        return super().__new__(cls)
-
-    def __init__(self):
-        self._capture_mode = None
-
-    def configure(self, capture_source:str, mode:int, fps:int):
-        super().configure(capture_source)
-        capture_width, capture_height, capture_fps = self.CAPTURE_MODES[mode].values()
-        if not fps in capture_fps:
-            raise UnsupportedFPSError()
-        self._capture_mode = CaptureMode(capture_width, capture_height, [fps])
-        self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, capture_width)
-        self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, capture_height)
-        self._capture.set(cv2.CAP_PROP_FPS, fps)
+    def initialize(self, sensor_id:int, gstreamer_pipeline:str):
+        self.release()
+        self._cap = cv2.VideoCapture(gstreamer_pipeline)
+        if not self._cap.isOpened():
+            raise RuntimeError(f'Failed to open {self._source}')
+        self._source = sensor_id
 
 
-class oCamS1CGNU(Camera):
+class OCamS1CGNU(Camera):
+    """ A Type of Stereo Camera """
 
-    # for USB 2.0 and 3.0
-    CAPTURE_MODES = {0: CaptureMode(640, 480, [10, 15, 20, 25, 30, 35, 40, 45]),
-                     1: CaptureMode(640, 360, [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]),
-                     2: CaptureMode(320, 240, [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60])}
+    def initialize(self,
+                   source: Union[int, str],
+                   width: int,
+                   height: int,
+                   fps: int):
+        super().initialize(source, width, height, fps)
 
-    def configure(self, capture_source:str, mode:int, fps:int):
-        super().configure(capture_source, mode, fps)
-        self._capture.set(cv2.CAP_PROP_CONVERT_RGB, 0.)
-        self._capture.set(cv2.CAP_PROP_EXPOSURE, 150)
+    def set_exposure(self, exposure: int):
+        self._cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
 
-    def preprocess(self, frame:np.ndarray, dst_size:Tuple[int, int]=None) -> np.ndarray:
-        r_frame, l_frame = cv2.split(frame)
-        #r_frame = cv2.cvtColor(r_frame, cv2.COLOR_BAYER_GB2BGR)
-        l_frame = cv2.cvtColor(l_frame, cv2.COLOR_BAYER_GB2BGR)
-        if dst_size is not None:
-            #r_frame = cv2.resize(r_frame, dst_size)
-            l_frame = cv2.resize(l_frame, dst_size)
-        return l_frame, r_frame
+    def set_cvt_rgb(self, cvt_rgb: float):
+        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, cvt_rgb)
 
 
 class ThermoCam160B(Camera):
+    """ A Type of Infrared Thermal Camera """
 
-    CAPTURE_MODES = {0: CaptureMode(160, 120, [9])}
-
-    def configure(self, capture_source:str, mode:int, fps:int):
-        super().configure(capture_source, mode, fps)
-        self._capture.set(cv2.CAP_PROP_CONVERT_RGB, 0.)
-
-    def preprocess(self, frame:np.ndarray, dst_size:Tuple[int, int]=None) -> np.ndarray:
-        frame = frame / 65535.0
+    @staticmethod
+    def normalize(frame: np.ndarray) -> np.ndarray:
+        """ 0 ~ 65535 -> 0 ~ 1 -> min-max normalization -> 0 ~ 255 """
+        frame = frame / 65535  # 16-bit image(0 ~ 65535) -> 0 ~ 1
         frame = (frame - np.min(frame)) / (np.max(frame) - np.min(frame))
-        frame = (frame * 255.0).astype(np.uint8)
-        if dst_size is not None:
-            frame = cv2.resize(frame, dst_size)
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        frame = (frame * 255).astype(np.uint8)  # -> 8-bit image(0 ~ 255)
         return frame
+
+    def initialize(self,
+                   source: Union[int, str],
+                   width: int,
+                   height: int,
+                   fps: int):
+        super().initialize(source, width, height, fps)
+        self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)  # Bayer
+        self._cap.set(cv2.CAP_PROP_FOURCC,
+                      cv2.VideoWriter.fourcc('Y', '1', '6', ' '))
 
 
 if __name__ == '__main__':
     # Usage
 
-    import traceback
+    def get_ocams():
+        ocams = OCamS1CGNU()
+        ocams.initialize('/dev/cam/oCamS-1CGN-U', 640, 480, 45)
+        ocams.set_exposure(0)
+        return ocams
+    
+    def get_picam():
+        sensor_id = 0
+        picam = RaspberryPiCamera2()
+        picam.initialize(sensor_id, get_gstreamer_pipeline(sensor_id))
+        return picam
+    
+    def get_ircam():
+        ircam = ThermoCam160B()
+        ircam.initialize('/dev/cam/ThermoCam160B', 160, 120, 9)
+        return ircam
 
-    def display(cam, fn):
-        try:
-            while True:
-                frame = cam.read()
-                frame = fn(frame)  # optional
-                cv2.imshow('dst', frame)
-                if cv2.waitKey(1) == ord('q'):
-                    break
-        except:
-            traceback.print_exc()
-        cv2.destroyAllWindows()
-        cam.release()
+    ocams = get_ocams()
+    #ocams_fn = lambda frame: cv2.cvtColor(cv2.split(frame)[0], cv2.COLOR_BAYER_GB2BGR)
+    ocams_fn = lambda frame: frame
 
-    dst_size = (640, 480)  # width and height of output image
+    picam = get_picam()
+    picam_fn = lambda frame: frame
 
-    stereo_cam = oCamS1CGNU()
-    stereo_cam.configure('/dev/camera/oCamS-1CGN-U', mode=0, fps=45)
-    stereo_fn = lambda x: cv2.flip(stereo_cam.preprocess(x, dst_size)[0], 0)  # only left frame
-    display(stereo_cam, stereo_fn)
+    ircam = get_ircam()
+    ircam_fn = lambda frame: cv2.cvtColor(cv2.resize(ThermoCam160B.normalize(frame), (640, 480)),
+                                          cv2.COLOR_GRAY2BGR)
 
-    thermo_cam = ThermoCam160B()
-    thermo_cam.configure('/dev/camera/ThermoCam160B', mode=0, fps=9)
-    thermo_fn = lambda x: cv2.flip(thermo_cam.preprocess(x, dst_size), 0)
-    display(thermo_cam, thermo_fn)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    dsize = (640, 480)
+    #picam_out = cv2.VideoWriter('picam.mp4', fourcc, 9.0, dsize)
+    #ocams_out = cv2.VideoWriter('ocams.mp4', fourcc, 9.0, dsize)
+    #ircam_out = cv2.VideoWriter('ircam.mp4', fourcc, 9.0, dsize)
+
+    try:
+        while True:
+            picam.grab()
+            ocams.grab()
+            ircam.grab()
+            
+            picam_frame = picam_fn(picam.retrieve())  # frame 1
+            ocams_frame = ocams_fn(ocams.retrieve())  # frame 2
+            ircam_frame = ircam_fn(ircam.retrieve())  # frame 3
+
+            #picam_out.write(picam_frame)
+            #ocams_out.write(ocams_frame)
+            #ircam_out.write(ircam_frame)
+
+            concat = cv2.hconcat([picam_frame, ocams_frame, ircam_frame])
+            cv2.imshow('display', concat)
+            if cv2.waitKey(int(1000/45)) == ord('q'):
+                break
+    except:
+        traceback.print_exc()
+
+    cv2.destroyAllWindows()
+    ircam.release()
