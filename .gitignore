@@ -1,5 +1,9 @@
-*.jpg
-*.png
+*.pt
+*.mp4
 *.pkl
+*.png
+*.pyc
+*.jpg
+*.gif
 
 __pycache__/
