@@ -2,85 +2,93 @@ import logging
 import threading
 import traceback
 from queue import Queue
+from typing import Union
 
 import cv2
 import numpy as np
 
 
-class VideoCaptureConnectionError(RuntimeError):
+class VideoCaptureOpenError(RuntimeError):
 
     def __init__(self, source: str):
-        super().__init__(f'Failed to open the source {source}.')
+        err = f'Failed to open the video source ({source}).'
+        super().__init__(err)
 
 
-class VideoCaptureGrabError(RuntimeError):
-
-    def __init__(self):
-        super().__init__('Failed to grab the next frame.')
-
-
-class VideoCaptureRetrieveError(RuntimeError):
+class VideoCaptureReadError(RuntimeError):
 
     def __init__(self):
-        super().__init__('Failed to retrieve the next frame.')
+        err = 'Failed to read the next frame.'
+        super().__init__(err)
 
 
 class VideoCaptureThread(threading.Thread):
 
-    def __init__(self, video_source: str):
+    def __init__(self, video_source: Union[str, int]):
         super().__init__()
-        self._video_source = video_source
-        self._frame_buffer = Queue(maxsize=1)
-        self._event = threading.Event()
-        self._stop_capturing = False
+        self._source = video_source
+        self._buffer = Queue(maxsize=1)
+
+        self._stop = False
+        self._continue = threading.Event()
+
+        self._is_capturing = False
 
     def run(self):
-        cap = cv2.VideoCapture(self._video_source)
+        cap = cv2.VideoCapture(self._source)
         if not cap.isOpened():
-            raise VideoCaptureConnectionError(self._video_source)
-        logging.info(f'Video source opened. {self._video_source}')
+            raise VideoCaptureOpenError(self._source)
+        logging.info(f'Video source opened. {self._source}')
 
-        self._event.set()
+        self._stop = False  # ?
+        self._continue.set()
+        self._is_capturing = True
+        logging.info('Start capturing.')
 
         try:
-            logging.info('Start capturing.')
-            while not self._stop_capturing:
-                self._event.wait()
+            while True:
+                self._continue.wait()
+                if self._stop:
+                    break
 
-                is_grabbed = cap.grab()
-                if not is_grabbed:
-                    raise VideoCaptureGrabError()
-
-                is_captured, frame = cap.retrieve()
+                is_captured, frame = cap.read()
                 if not is_captured:
-                    raise VideoCaptureRetrieveError()
+                    raise VideoCaptureReadError()
 
-                if self._frame_buffer.full():
-                    self._frame_buffer.get()
-                self._frame_buffer.put(frame)
+                if self._buffer.full():
+                    self._buffer.get()
+                self._buffer.put(frame)
 
         except:
             traceback.print_exc()
 
         finally:
-            logging.info('Stopped capturing.')
-            cap.release()
             logging.info('Video source released.')
+            cap.release()
+            logging.info('Stopped capturing.')
+            self._stop = True
+            self._continue.clear()
+            self._is_capturing = False
 
     def pause(self):
-        self._event.clear()
+        self._continue.clear()
+        self._is_capturing = False
         logging.info('Paused capturing.')
 
     def resume(self):
-        self._event.set()
+        self._continue.set()
+        self._is_capturing = True
         logging.info('Resumed capturing.')
 
     def stop(self):
-        if not self._event.is_set():
-            self._event.set()
-        self._stop_capturing = True
+        self._stop = True
+        if not self._continue.is_set():
+            self._continue.set()
         logging.info('Stopping capture process...')
 
     def read(self) -> np.ndarray:
-        frame = self._frame_buffer.get()
+        frame = self._buffer.get()
         return frame
+
+    def is_capturing(self) -> bool:
+        return self._is_capturing
