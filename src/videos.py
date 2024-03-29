@@ -11,7 +11,7 @@ import numpy as np
 class VideoCaptureOpenError(RuntimeError):
 
     def __init__(self, source: str):
-        err = f'Failed to open the video source ({source}).'
+        err = f'Failed to open the video source: {source}'
         super().__init__(err)
 
 
@@ -31,7 +31,6 @@ class VideoCaptureThread(threading.Thread):
 
         self._stop = False
         self._continue = threading.Event()
-
         self._is_capturing = False
 
     def run(self):
@@ -40,7 +39,7 @@ class VideoCaptureThread(threading.Thread):
             raise VideoCaptureOpenError(self._source)
         logging.info(f'Video source opened. {self._source}')
 
-        self._stop = False  # ?
+        self._stop = False
         self._continue.set()
         self._is_capturing = True
         logging.info('Start capturing.')
